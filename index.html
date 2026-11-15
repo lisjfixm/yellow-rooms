@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>YELLOW ROOMS B8.0</title>
+<title>YELLOW ROOMS B8.1</title>
 <link rel="icon" href="data:,">
 <style>
     html, body {
@@ -595,67 +595,13 @@
         <div id="tkRad" class="tk"></div>
     </div>
     <!-- /UI-DOM -->
-    <!-- ===== POKI (platform.js; Ladeweiche und Stub wie TerraPixel 2) ===== -->
-    <script>
-        window.PLATFORM_POKI_ENABLED = false;
-        // Offline Poki SDK stub: ads/analytics stripped; interstitial resumes, rewarded grants.
-        window.PokiSDK = {
-            init: function () { return Promise.resolve(true); },
-            gameLoadingFinished: function () {},
-            gameplayStart: function () {},
-            gameplayStop: function () {},
-            commercialBreak: function (cb) { if (typeof cb === "function") cb(); return Promise.resolve(true); },
-            rewardedBreak: function () { return Promise.resolve(true); },
-            measure: function () {}
-        };
-    </script>
-    <script>
-        function TC_pokiSdkLaden(h) {
-            h = String(h || '').toLowerCase();
-            if (/(^|\.)github\.io$/.test(h)) return false;
-            if (h === '' || h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1' || /\.localhost$/.test(h)) return false;
-            if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h) || /\.local$/.test(h)) return false;
-            return true;
-        }
-        if (window.PLATFORM_POKI_ENABLED && TC_pokiSdkLaden(location.hostname)) {
-            document.write('<script src="https://game-cdn.poki.com/scripts/v2/poki-sdk.js" onerror="window.__POKI_SDK_FAILED=1"><\/script>');
-        }
-    </script>
-    <script>
-        (function () {
-            if (!window.PLATFORM_POKI_ENABLED) return;
-            var q;
-            try { q = new URLSearchParams(location.search); if (q.get('pokistub') !== '1') return; } catch (e) { return; }
-            var log = function (m) { console.log('[Poki-Stub]', m); };
-            window.PokiSDK = {
-                init: function () { log('init()'); return Promise.resolve(); },
-                gameLoadingStart: function () { log('gameLoadingStart()'); },
-                gameLoadingFinished: function () { log('gameLoadingFinished()'); },
-                gameplayStart: function () { log('gameplayStart()'); },
-                gameplayStop: function () { log('gameplayStop()'); },
-                measure: function (c, w, a) { log('measure(' + c + ', ' + w + (a ? ', ' + a : '') + ')'); },
-                commercialBreak: function (vorher) { log('commercialBreak()'); try { if (vorher) vorher(); } catch (e) {} return new Promise(function (r) { setTimeout(r, 1500); }); },
-                rewardedBreak: function (vorher) { log('rewardedBreak()'); try { if (vorher) vorher(); } catch (e) {} return new Promise(function (r) { setTimeout(function () { r(true); }, 1500); }); }
-            };
-            log('aktiv');
-        })();
-    </script>
-    <script>
-    (function () {
-        var sdk = window.PLATFORM_POKI_ENABLED && window.PokiSDK;
-        if (!sdk || typeof sdk.init !== 'function') return;
-        try { window.YR_POKI_INIT = Promise.resolve(sdk.init()).then(function () { return true; }, function () { return false; }); }
-        catch (e) { window.YR_POKI_INIT = Promise.resolve(false); }
-        window.YR_POKI_INIT.then(function () { try { if (sdk.gameLoadingStart) sdk.gameLoadingStart(); } catch (e) { } });
-    })();
-    </script>
     <!-- Ladeliste: kern zuerst, main zuletzt. Version aus dem <title> als ?v= (frisch laden). Aufrufe zwischen Dateien
          sind typeof-geschuetzt oder laufen ueber Haken (kern.js Spiel_haken). -->
     <script>
     (function () {
         var v = (document.title.match(/B\d+\.\d+/) || ['0'])[0];
         if (/[?&]frisch=1/.test(location.search)) v += '.' + Date.now();
-        var dateien = ['kern', 'platform', 'schwierig', 'welt',     // B3.0 schwierig.js: EASY/NORMAL/HARD
+        var dateien = ['kern', 'schwierig', 'welt',     // B3.0 schwierig.js: EASY/NORMAL/HARD
                         'kacheln', 'fenster', 'render',
                        'licht', 'sicht', 'effekte', 'render_gl',
                        'deko', 'dach', 'lv_kern', 'lv_0', 'lv_1', 'lv_2', 'lv_3', 'lv_4', 'lv_stadt',     // B3.2 lv_stadt.js: EMPTY TOWN (Level 0); B3.5 dach.js: Daecher + Mondlicht
