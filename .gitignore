@@ -1,0 +1,5 @@
+_pre_fix_backup_20261115/
+_backup/
+node_modules/
+*.orig
+*.log

@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>YELLOW ROOMS B8.0</title>
+<link rel="icon" href="data:,">
+<style>
+    html, body {
+        margin: 0; padding: 0; height: 100%;
+        background: #000; overflow: hidden;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        color: #e8dfb8;
+        touch-action: none;
+        -webkit-user-select: none; user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+    #buehne { position: fixed; inset: 0; }
+    /* Das Canvas FUELLT das Fenster (wie TerraPixel 2): Puffer in Geraetepixeln (fenster.js), pixelig */
+    #spielCanvas {
+        display: block; width: 100%; height: 100%;
+        image-rendering: pixelated; image-rendering: crisp-edges;
+        touch-action: none;
+    }
+    /* Ladebild (aus TerraPixel 2 / TerraCity H1.406): steht mit dem ersten Malen da, Balken laeuft ueber transform */
+    #laden {
+        position: fixed; inset: 0; z-index: 9999; background: #000;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5vmin;
+        transition: opacity 0.6s ease-out;
+    }
+    #laden.weg { opacity: 0; pointer-events: none; }
+    #ladenTitel { width: min(70vw, 60vmin, 420px); image-rendering: pixelated; image-rendering: crisp-edges; }
+    #ladenBalken {
+        position: relative; overflow: hidden;
+        width: min(64vw, 56vmin, 420px); height: 8px; border-radius: 1px;
+        background: #15130a; box-shadow: inset 0 0 0 1px #3a3418;
+    }
+    #ladenBalken i {
+        position: absolute; inset: 0;
+        background: linear-gradient(90deg, #8a7a2a, #d8c45a, #fff3a0);
+        transform-origin: 0 50%; transform: scaleX(0.03);
+        transition: transform 0.4s ease-out; will-change: transform;
+    }
+    #ladenBalken b {
+        position: absolute; top: 0; bottom: 0; left: 0; width: 35%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+        animation: ladenGlanz 1.3s linear infinite; will-change: transform;
+    }
+    @keyframes ladenGlanz { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+    #ladenText { font: 600 12px/1 "Courier New", monospace; letter-spacing: 0.3em; color: #8a7f55; }
+    /* ===== OBERFLAECHE (anzeige.js, titel.js, tod.js, uebergang.js, menue.js, touch.js, leiste.js) ===== */
+    /* UI-CSS */
+    /* Grundfarben: vergilbt, Found-Footage, nichts Buntes. Schrift Monospace (Courier) bzw. Pixelschrift als Canvas. */
+    :root {
+        --ui-gelb: #eadb95; --ui-hell: #fff4c4; --ui-beige: #c9b884; --ui-blass: #8d8158;
+        --ui-mono: "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace;
+        --ui-glut: 0 0 8px rgba(240, 220, 140, 0.35), 0 1px 0 rgba(0, 0, 0, 0.9);
+        --stick: clamp(130px, 33vmin, 210px);
+        --knopf: clamp(76px, 18vmin, 116px);
+        --klein: clamp(52px, 12.5vmin, 78px);
+        --rand: 20px;
+    }
+    #ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; font-family: var(--ui-mono); color: var(--ui-gelb); }
+    .ui-overlay {
+        position: fixed; inset: 0; opacity: 0; visibility: hidden; pointer-events: none;
+        transition: opacity 0.35s ease-out, visibility 0s linear 0.35s;
+    }
+    .ui-overlay.an { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity 0.35s ease-out, visibility 0s; }
+    /* VHS-Zeilen ueber jedem Fenster */
+    .ui-zeilen::after {
+        content: ''; position: absolute; inset: 0; pointer-events: none;
+        background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px);
+    }
+    .ui-rauschen { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; opacity: 0; }
+    .ui-knopf {
+        display: block; margin: 0 auto; padding: 7px 14px; border: 0; background: transparent; cursor: pointer;
+        color: var(--ui-beige); font: 700 clamp(16px, 2.4vmin + 6px, 24px)/1.2 var(--ui-mono); letter-spacing: 0.14em;
+        text-shadow: var(--ui-glut); -webkit-tap-highlight-color: transparent;
+    }
+    .ui-knopf .marke { visibility: hidden; color: var(--ui-hell); }
+    .ui-knopf.gewaehlt { color: var(--ui-hell); }
+    .ui-knopf.gewaehlt .marke { visibility: visible; animation: uiBlink 1s steps(2) infinite; }
+    .ui-knopf small { display: block; font-size: 0.56em; letter-spacing: 0.12em; color: var(--ui-blass); margin-top: 3px; }
+    .ui-knopf .wert { color: var(--ui-blass); }
+    @keyframes uiBlink { 50% { opacity: 0; } }
+
+    /* --- HUD (anzeige.js): seit B7.6 alles rechts oben in einer Spalte (Welle, REC, FUSES, Herzen ...), Ausdauer unten Mitte --- */
+    #hud {
+        position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.5s;
+        font: 700 13px/1.15 var(--ui-mono); letter-spacing: 0.12em; color: rgba(240, 228, 180, 0.72);
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 4px rgba(0, 0, 0, 0.6);
+    }
+    body[data-zustand="spiel"] #hud { opacity: 1; }
+    body[data-zustand="pause"] #hud { opacity: 0.4; }
+    /* B7.6 der ganze HUD-Text steht rechts oben (Nutzer 09.11.2026: "jetzt koennen wir den ganzen text von links nach rechts rueber schieben") */
+    /* B7.6 zwei Spalten mit je 3 Zeilen (Nutzer: "mach den text mal in zwei spalten mit je 3 zeilen"), Wellenzeile QUIET + Datum raus */
+    #hudRec { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: calc(16px + env(safe-area-inset-right, 0px));
+        display: grid; grid-template-columns: auto auto; column-gap: 18px; row-gap: 5px; align-items: center; justify-items: end; text-align: right; }
+    #hudRec > * { margin: 0 !important; }
+    #hudRec > .datum, #hudRec > #hudRechts { display: none !important; }
+    #hudRec > .zeile { grid-area: 1 / 1; } #hudRec > #hudHerzen { grid-area: 2 / 1; } #hudRec > #hudSicherung { grid-area: 3 / 1; } #hudRec > #hudBand { grid-area: 4 / 1; }
+    #hudRec > #hudKills { grid-area: 1 / 2; } #hudRec > #hudMenschen { grid-area: 2 / 2; } #hudRec > #hudWaffe { grid-area: 3 / 2; }
+    /* B7.7 am Rechner alles groesser (Nutzer 09.11.2026: "am rechner muessen sie groesser sein. schrift muss groesser") */
+    body:not(.touch) #hudRec { zoom: 1.7; }
+    @media (min-width: 1700px) and (min-height: 950px) { body:not(.touch) #hudRec { zoom: 2.1; } }
+    /* B7.7 Handy quer: alle 6 Zeilen rechts untereinander (Nutzer: "bei handy quer sollen alle 6 punkte rechts untereinander") */
+    @media (orientation: landscape) {
+        body.touch #hudRec { grid-template-columns: auto; row-gap: 3px; }
+        body.touch #hudRec > .zeile { grid-area: 1 / 1; } body.touch #hudRec > #hudHerzen { grid-area: 2 / 1; } body.touch #hudRec > #hudSicherung { grid-area: 3 / 1; }
+        body.touch #hudRec > #hudKills { grid-area: 4 / 1; } body.touch #hudRec > #hudMenschen { grid-area: 5 / 1; } body.touch #hudRec > #hudWaffe { grid-area: 6 / 1; }
+        body.touch #hudRec > #hudBand { grid-area: 7 / 1; }
+    }
+    #hudRec .punkt { color: #c8452e; }
+    #hudRec.blink .punkt { opacity: 0.15; }
+    #hudRec .datum { font-size: 11px; opacity: 0.7; margin-top: 3px; }
+    #hudRechts {
+        position: static; margin-bottom: 4px;     /* B7.6 steckt jetzt oben in #hudRec (anzeige.js) */
+        display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+    }
+    /* B2.7 UEBERLEBEN: Ueberlebenszeit + Bestzeit (ueberleben.js), oben rechts ueber der Lampe */
+    #hudUhr { text-align: right; line-height: 1.1; }
+    #hudUhr b, #hudUhr .best { display: none; }   /* B7.6 Uhr + BEST rechts raus - Zeit steht links bei REC, BEST im Menue (Nutzer 09.11.2026) */
+    #hudUhr small { display: block; font-size: 10px; letter-spacing: 0.16em; opacity: 0.75; margin-top: 2px; }
+    #hudUhr small:empty { display: none; }
+    #hudUhr.rekord .best { color: #f4e48a; opacity: 1; }
+    #hudAkku { position: relative; display: flex; gap: 2px; padding: 2px; height: 8px; border: 2px solid rgba(240, 228, 180, 0.7); }
+    #hudAkku i { width: 5px; background: rgba(240, 228, 180, 0.75); }
+    #hudAkku i.leer { background: transparent; }
+    #hudAkku.niedrig i:not(.leer) { animation: uiBlink 0.8s steps(2) infinite; }
+    #hudAkku b { position: absolute; right: -6px; top: 2px; width: 3px; height: 6px; background: rgba(240, 228, 180, 0.7); }
+    #hudLampe { display: none !important; }   /* B7.6 Lampe ist immer an (held.js) - Anzeige ON raus (Nutzer 09.11.2026) */
+    #hudLampe svg { width: 18px; height: 12px; fill: currentColor; }
+    #hudLampe.aus { opacity: 0.5; }
+    #hudLampe.aus .strahl { display: none; }
+    #hudLampe.flacker { animation: hudFlacker 0.23s steps(2) infinite; }
+    @keyframes hudFlacker { 50% { opacity: 0.3; } }
+    #hudLampe.grell { color: #fff8e0; text-shadow: 0 0 6px rgba(255, 240, 190, 0.9); }
+    /* B2.0 Kampf (kampf.js): Herzen + KILLS unter dem REC */
+    #hudHerzen { display: flex; gap: 4px; margin-top: 7px; }
+    #hudHerzen svg { width: 15px; height: 15px; fill: #d4483a; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.9)); }
+    #hudHerzen svg.leer { fill: rgba(240, 228, 180, 0.18); }
+    #hudHerzen.treffer svg { animation: uiBlink 0.18s steps(2) infinite; }
+    #hudHerzen.knapp svg:not(.leer) { animation: hudPuls 0.7s ease-in-out infinite; }
+    @keyframes hudPuls { 50% { transform: scale(1.18); } }
+    #hudKills { font-size: 11px; margin-top: 5px; opacity: 0.85; white-space: pre; }
+    #hudAusdauer {
+        position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+        width: min(160px, 40vw); height: 3px; background: rgba(0, 0, 0, 0.45); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+        opacity: 0; transition: opacity 0.6s;
+    }
+    #hudAusdauer.an { opacity: 1; transition: opacity 0.15s; }
+    #hudAusdauer i { display: block; height: 100%; background: rgba(240, 228, 180, 0.8); }
+    #hudAusdauer.leer i { background: rgba(190, 70, 46, 0.85); }
+
+    /* Meldung (Mitte oben), Kontext-Hinweis (unten Mitte), Erst-Hinweis (oben Mitte), Level-Karte (Mitte) */
+    #meldung {
+        position: fixed; left: 50%; top: calc(20vh + env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+        text-align: center; width: max-content; max-width: calc(100vw - 32px); font: 700 clamp(18px, 3.2vmin + 8px, 34px)/1.1 var(--ui-mono);
+        letter-spacing: 0.2em; color: var(--ui-hell); text-shadow: var(--ui-glut); opacity: 0; transition: opacity 0.45s ease-in;
+    }
+    #meldung.an { opacity: 1; transition: none; animation: uiRein 0.5s steps(5); }
+    #meldung small { display: block; font-size: 0.45em; letter-spacing: 0.25em; color: var(--ui-beige); margin-top: 6px; }
+    @keyframes uiRein {
+        0% { opacity: 0; transform: translateX(-53%) skewX(12deg); }
+        40% { opacity: 0.7; transform: translateX(-48%); }
+        100% { opacity: 1; transform: translateX(-50%); }
+    }
+    #hinweis {
+        position: fixed; left: 50%; bottom: calc(36px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+        padding: 5px 12px; background: rgba(10, 8, 3, 0.62); border: 1px solid rgba(201, 184, 132, 0.35);
+        font: 700 14px/1.2 var(--ui-mono); letter-spacing: 0.14em; color: var(--ui-hell); white-space: nowrap;
+        max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis; box-sizing: border-box;
+        opacity: 0; transition: opacity 0.25s;
+    }
+    #hinweis.an { opacity: 1; }
+    #tipp {
+        position: fixed; left: 50%; top: calc(66px + env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+        max-width: calc(100vw - 40px); text-align: center; font: 700 15px/1.3 var(--ui-mono); letter-spacing: 0.14em;
+        color: var(--ui-gelb); text-shadow: var(--ui-glut); opacity: 0; transition: opacity 0.6s;
+    }
+    #tipp.an { opacity: 0.92; }
+    #tipp.letzt { font-size: 17px; color: var(--ui-hell); }
+    #levelKarte {
+        position: fixed; left: 50%; top: 38%; transform: translate(-50%, -50%); width: min(92vw, 760px); text-align: center;
+        opacity: 0; transition: opacity 1.4s ease-in; text-shadow: var(--ui-glut);
+    }
+    #levelKarte.an { opacity: 1; transition: opacity 0.4s; }
+    #levelKarte.an.aus { opacity: 0; transition: opacity 1.4s ease-in; }
+    #levelKarte .klein { min-height: 1.4em; font: 700 clamp(13px, 1.6vmin + 8px, 18px)/1.4 var(--ui-mono); letter-spacing: 0.5em; color: var(--ui-beige); }
+    #levelKarte .gross { min-height: 1.15em; margin: 0.2em 0; font: 700 clamp(22px, 4.4vmin + 8px, 46px)/1.15 var(--ui-mono); letter-spacing: 0.16em; color: var(--ui-hell); }
+    #levelKarte .unter { min-height: 1.4em; font: italic 700 clamp(12px, 1.4vmin + 7px, 16px)/1.4 var(--ui-mono); letter-spacing: 0.14em; color: var(--ui-blass); }
+
+    /* Zettel: vergilbtes Papier, liniert, schief; Spiel pausiert */
+    #zettel { z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.62); }
+    #zettel .papier {
+        --dreh: -1deg; position: relative; box-sizing: border-box; width: min(84vw, 460px); max-height: 80vh; overflow: hidden;
+        padding: 28px 26px 18px; color: #3a2c14;
+        background:
+            radial-gradient(circle at 82% 14%, rgba(150, 110, 40, 0.35), transparent 28%),
+            radial-gradient(circle at 12% 88%, rgba(120, 90, 30, 0.3), transparent 34%),
+            repeating-linear-gradient(transparent 0 calc(1.55em - 1px), rgba(90, 100, 120, 0.16) calc(1.55em - 1px) 1.55em),
+            #e1d29c;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), inset 0 0 40px rgba(120, 90, 30, 0.45);
+        font: italic 700 clamp(15px, 1.4vmin + 10px, 19px)/1.55 "Courier New", Courier, monospace; letter-spacing: 0.02em;
+        transform: rotate(var(--dreh)) scale(0.96); transition: transform 0.3s;
+    }
+    #zettel.an .papier { transform: rotate(var(--dreh)) scale(1); }
+    #zettel .text { white-space: pre-wrap; }
+    #zettel .zu { margin-top: 18px; text-align: right; font-style: normal; font-size: 12px; letter-spacing: 0.2em; color: rgba(58, 44, 20, 0.6); }
+
+    /* --- TITEL (titel.js): Level 0 driftet im Hintergrund --- */
+    #titel {
+        z-index: 50; display: flex; align-items: center; justify-content: center; text-align: center;
+        background: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0.12) 0%, rgba(0, 0, 0, 0.55) 62%, rgba(0, 0, 0, 0.9) 100%);
+    }
+    #titel.weg { opacity: 0; }
+    .tiInnen { display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2.2vmin, 22px); padding: 16px; }
+    .tiLogo canvas {
+        display: block; width: min(78vw, 62vmin, 520px); height: auto;
+        image-rendering: pixelated; image-rendering: crisp-edges;
+        filter: drop-shadow(0 0 14px rgba(240, 210, 110, 0.35)); animation: tiFlacker 7s steps(1) infinite;
+    }
+    @keyframes tiFlacker { 0%, 41%, 43%, 45%, 77%, 79%, 100% { opacity: 1; } 42% { opacity: 0.35; } 44% { opacity: 0.6; } 78% { opacity: 0.5; } }
+    .tiUnter { margin-top: -4px; font: 700 clamp(11px, 1.2vmin + 6px, 14px)/1 var(--ui-mono); letter-spacing: 0.6em; color: var(--ui-blass); }
+    .tiDruecke {
+        margin-top: 2vmin; font: 700 clamp(15px, 2vmin + 8px, 22px)/1 var(--ui-mono); letter-spacing: 0.3em;
+        color: var(--ui-hell); text-shadow: var(--ui-glut); animation: uiBlink 1.2s steps(2) infinite;
+    }
+    #titel.wahl .tiDruecke { display: none; }
+    .tiWahl { display: none; }
+    #titel.wahl .tiWahl { display: block; }
+    .tiSteuer { margin-top: 1vmin; font: 700 clamp(10px, 1vmin + 6px, 13px)/2 var(--ui-mono); letter-spacing: 0.12em; color: var(--ui-blass); }
+    .tiSteuer span { color: var(--ui-beige); border: 1px solid rgba(201, 184, 132, 0.4); padding: 0 4px; }
+    .tiFuss { position: absolute; right: calc(10px + env(safe-area-inset-right, 0px)); bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+              font: 11px var(--ui-mono); letter-spacing: 0.1em; color: rgba(141, 129, 88, 0.6); }
+    /* B2.7 UEBERLEBEN: Level-Menue (titel.js) - Pfeile < >, LEVEL n, Titel, BEST, PLAY; Blende beim Umbau des Hintergrunds */
+    #titel { touch-action: none; }
+    #titel .tiInnen { position: relative; }
+    .tiBlende { position: absolute; inset: 0; background: #000; opacity: 0; transition: opacity 0.18s linear; pointer-events: none; }
+    #titel.blende .tiBlende { opacity: 1; }
+    #titel.wahl .tiLogo canvas { width: min(64vw, 40vmin, 400px); }
+    #titel.wahl .tiUnter { display: none; }
+    .tiLevel { display: none; flex-direction: column; align-items: center; gap: clamp(6px, 1.6vmin, 14px); }
+    #titel.wahl .tiLevel { display: flex; }
+    .tiReihe { display: flex; align-items: center; justify-content: center; gap: clamp(6px, 3vw, 26px); }
+    .tiPfeil {
+        flex: none; width: clamp(44px, 9vmin, 64px); height: clamp(44px, 9vmin, 64px); padding: 0; cursor: pointer;
+        border: 2px solid rgba(201, 184, 132, 0.45); background: rgba(12, 10, 4, 0.45); color: var(--ui-hell);
+        font: 700 clamp(20px, 4vmin + 4px, 34px)/1 var(--ui-mono); text-shadow: var(--ui-glut); -webkit-tap-highlight-color: transparent;
+    }
+    .tiPfeil:active { background: rgba(234, 219, 149, 0.3); }
+    @media (hover: hover) { .tiPfeil:hover:not(:disabled) { background: rgba(201, 184, 132, 0.22); } }
+    .tiPfeil:disabled { opacity: 0.18; cursor: default; }
+    .tiLvMitte { width: min(58vw, 400px); }
+    .tiLvName { font: 700 clamp(26px, 5vmin + 10px, 54px)/1.1 var(--ui-mono); letter-spacing: 0.16em; color: var(--ui-hell); text-shadow: var(--ui-glut); }
+    .tiLvTitel { margin-top: 4px; font: 700 clamp(12px, 1.6vmin + 7px, 20px)/1.3 var(--ui-mono); letter-spacing: 0.24em; color: var(--ui-beige); }
+    .tiLvUnter { min-height: 1.3em; font: italic 700 clamp(10px, 1.1vmin + 7px, 14px)/1.3 var(--ui-mono); letter-spacing: 0.12em; color: var(--ui-blass); }
+    .tiLvBest { font: 700 clamp(12px, 1.2vmin + 8px, 16px)/1.2 var(--ui-mono); letter-spacing: 0.24em; color: var(--ui-gelb); }
+    .tiLvSperre { display: none; align-items: center; justify-content: center; gap: 8px; max-width: calc(100vw - 32px);
+                  font: 700 clamp(11px, 1vmin + 7px, 14px)/1.3 var(--ui-mono); letter-spacing: 0.12em; color: var(--ui-beige); }
+    .tiLvSperre svg { flex: none; width: 18px; height: 18px; fill: currentColor; }
+    #titel.gesperrt .tiLvSperre { display: flex; }
+    #titel.gesperrt .tiLvBest { display: none; }
+    #titel.gesperrt .tiLvName, #titel.gesperrt .tiLvTitel, #titel.gesperrt .tiLvUnter { opacity: 0.35; }
+    .tiPlay {
+        margin-top: clamp(2px, 1vmin, 10px); padding: 10px 36px; cursor: pointer; border: 2px solid rgba(255, 244, 196, 0.75);
+        background: rgba(234, 219, 149, 0.14); color: var(--ui-hell); box-shadow: 0 0 16px rgba(240, 220, 140, 0.25);
+        font: 700 clamp(18px, 3vmin + 8px, 32px)/1 var(--ui-mono); letter-spacing: 0.3em; text-shadow: var(--ui-glut);
+        -webkit-tap-highlight-color: transparent;
+    }
+    .tiPlay:active { background: rgba(234, 219, 149, 0.36); }
+    @media (hover: hover) { .tiPlay:hover { background: rgba(234, 219, 149, 0.28); } }
+    #titel.gesperrt .tiPlay { opacity: 0.28; border-style: dashed; box-shadow: none; cursor: not-allowed; }
+    .tiPlay.nein { animation: tiNein 0.3s linear; }
+    @keyframes tiNein { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+    .tiPunkte { display: flex; gap: 7px; }
+    .tiPunkte i { width: 8px; height: 8px; border: 1px solid rgba(234, 219, 149, 0.7); }
+    .tiPunkte i.an { background: var(--ui-hell); }
+    .tiPunkte i.zu { opacity: 0.35; border-style: dashed; }
+
+    /* --- TOD (tod.js): Bild reisst, Schnee, SIGNAL LOST, schwarz, TRY AGAIN --- */
+    #tod { z-index: 80; display: flex; align-items: center; justify-content: center; text-align: center; transition: none; }
+    #tod .ui-rauschen { transition: opacity 1.2s ease-in; }
+    #tod.schnee .ui-rauschen { opacity: 0.75; }
+    #tod.warten .ui-rauschen { opacity: 0; transition: opacity 0.6s; }
+    .tdSchwarz { position: absolute; inset: 0; background: #000; opacity: 0; transition: opacity 0.8s ease-in; }
+    #tod.schwarz .tdSchwarz { opacity: 0.9; }
+    #tod.warten .tdSchwarz { opacity: 1; }
+    .tdBlitz { position: absolute; inset: 0; background: #fff6dc; opacity: 0; }
+    #tod.riss .tdBlitz { animation: tdBlitz 0.5s ease-out forwards; }
+    @keyframes tdBlitz { 0% { opacity: 0.85; background: #fff6dc; } 30% { opacity: 0.5; background: #6a1206; } 100% { opacity: 0; } }
+    .tdInnen { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2.5vmin; padding: 0 16px; }
+    .tdTitel canvas { display: block; width: min(84vw, 70vmin, 560px); height: auto; image-rendering: pixelated; image-rendering: crisp-edges; opacity: 0; }
+    #tod.schnee .tdTitel canvas { opacity: 1; animation: tdZitter 0.18s steps(3) infinite; }
+    #tod.warten .tdTitel canvas { opacity: 0.22; animation: none; }
+    @keyframes tdZitter { 0% { transform: translate(0, 0); } 33% { transform: translate(-3px, 1px) skewX(-4deg); } 66% { transform: translate(2px, -1px); } }
+    .tdGrund { min-height: 1.3em; font: 700 clamp(14px, 1.8vmin + 8px, 22px)/1.3 var(--ui-mono); letter-spacing: 0.22em; color: var(--ui-beige); text-shadow: var(--ui-glut); }
+    .tdNochmal { opacity: 0; transition: opacity 0.6s; }
+    #tod.warten .tdNochmal { opacity: 1; }
+    #tod.werbung .tdNochmal { opacity: 0.3; }
+    .tdNochmal .gross { margin-top: 3vmin; font: 700 clamp(22px, 3.6vmin + 10px, 40px)/1 var(--ui-mono); letter-spacing: 0.3em; color: var(--ui-hell); text-shadow: var(--ui-glut); }
+    .tdNochmal .klein { margin-top: 12px; font: 700 clamp(11px, 1vmin + 7px, 14px)/1.3 var(--ui-mono); letter-spacing: 0.2em; color: var(--ui-blass); animation: uiBlink 1.2s steps(2) infinite; }
+    .tdInfo { font: 12px var(--ui-mono); letter-spacing: 0.2em; color: var(--ui-blass); opacity: 0; transition: opacity 0.6s; }
+    /* B2.7 UEBERLEBEN: Zeit, Bestzeit, Freischaltung, TRY AGAIN / LEVELS */
+    .tdZeit { margin-top: 3vmin; font: 700 clamp(20px, 3.4vmin + 10px, 40px)/1.1 var(--ui-mono); letter-spacing: 0.2em; color: var(--ui-hell); text-shadow: var(--ui-glut); }
+    .tdBest { margin-top: 10px; font: 700 clamp(12px, 1.2vmin + 8px, 16px)/1.3 var(--ui-mono); letter-spacing: 0.26em; color: var(--ui-beige); }
+    .tdBest.neu { color: #f4e48a; animation: uiBlink 0.5s steps(2) 6; }
+    .tdFrei { min-height: 1.3em; margin-top: 6px; font: 700 clamp(12px, 1.2vmin + 8px, 16px)/1.3 var(--ui-mono); letter-spacing: 0.26em; color: var(--ui-hell); text-shadow: var(--ui-glut); }
+    .tdWahl { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 clamp(8px, 4vw, 40px); margin-top: 2.5vmin; }
+    .tdWahl .ui-knopf { margin: 0; }
+    #tod.warten .tdInfo { opacity: 0.8; }
+    body.todRiss #buehne { animation: todRiss 0.7s steps(7) forwards; }
+    @keyframes todRiss {
+        0% { transform: none; filter: none; }
+        15% { transform: translate(-2%, 1%) skewX(8deg) scaleY(1.04); filter: brightness(2) contrast(1.6) sepia(0.6); }
+        30% { transform: translate(3%, -2%) skewX(-12deg); filter: brightness(0.6) contrast(2); }
+        50% { transform: translate(-1%, 3%) scaleX(1.08); filter: brightness(1.4) sepia(1); }
+        75% { transform: translate(1%, 0) skewX(4deg); filter: brightness(0.5); }
+        100% { transform: none; filter: brightness(0.35) sepia(0.5); }
+    }
+
+    /* --- UEBERGANG (uebergang.js): noclip - das Bild streckt sich und faellt, Schnee, schwarz --- */
+    #uebergang { z-index: 85; pointer-events: none !important; display: flex; align-items: center; justify-content: center; }
+    #uebergang .ui-rauschen { transition: opacity 1.2s ease-in; }
+    #uebergang.fall .ui-rauschen { opacity: 0.55; }
+    .ueSchwarz { position: absolute; inset: 0; background: #000; opacity: 0; transition: opacity 1.3s cubic-bezier(0.7, 0, 1, 1); }
+    #uebergang.fall .ueSchwarz { opacity: 1; }
+    #uebergang.hell { opacity: 0; transition: opacity 0.9s ease-out, visibility 0s linear 0.9s; }
+    .ueText { position: relative; padding: 0 20px; text-align: center; font: 700 clamp(12px, 1.2vmin + 8px, 16px)/1.4 var(--ui-mono); letter-spacing: 0.3em; color: var(--ui-blass); opacity: 0; transition: opacity 0.5s; }
+    #uebergang.schwarz .ueText { opacity: 0.85; }
+    #uebergang.hell .ueText { opacity: 0; }
+    body.ueFall #buehne { animation: ueFall 1.5s cubic-bezier(0.55, 0, 0.9, 0.5) forwards; transform-origin: 50% 40%; }
+    @keyframes ueFall {
+        0% { transform: none; filter: none; }
+        20% { transform: scale(1.02, 1.08) skewX(2deg); filter: brightness(1.3) contrast(1.2); }
+        40% { transform: scale(0.94, 1.5) translateY(2%); filter: brightness(1.6) sepia(0.5) blur(0.5px); }
+        70% { transform: scale(0.8, 2.6) translateY(12%); filter: brightness(1.1) sepia(0.8) blur(1.5px); }
+        100% { transform: scale(0.55, 4.5) translateY(40%); filter: brightness(0.3) sepia(1) blur(3px); }
+    }
+
+    /* --- ENDE (uebergang.js Ende_zeige): aufwachen, die Tapete ist gelb, THE END?, Dank --- */
+    #ende {
+        z-index: 90; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+        background: #000; transition: opacity 0.8s, background-color 3s;
+    }
+    #ende.gelb { background-color: #2a2208; }
+    #ende.gelb2 { background: repeating-linear-gradient(90deg, #4a3c12 0 14px, #57471a 14px 16px); }
+    #ende.glitch { background: #0a0803; }
+    .enBlitz { position: absolute; inset: 0; background: #fff; opacity: 0; }
+    #ende.weiss .enBlitz { animation: enWeiss 2.4s ease-out forwards; }
+    @keyframes enWeiss { 0% { opacity: 1; } 100% { opacity: 0; } }
+    .enZeilen {
+        position: relative; display: flex; flex-direction: column; gap: 1.1em; max-width: 900px; padding: 0 22px;
+        font: 700 clamp(14px, 1.6vmin + 9px, 22px)/1.4 var(--ui-mono); letter-spacing: 0.14em; color: #e8e4d8;
+    }
+    #ende.gelb .enZeilen { color: var(--ui-gelb); text-shadow: 0 1px 0 #000; }
+    #ende .ui-rauschen { transition: opacity 1s; }
+    #ende.glitch .ui-rauschen { opacity: 0.35; }
+    #ende.dank .ui-rauschen { opacity: 0.1; }
+    .enTheEnd { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); opacity: 0; pointer-events: none; transition: top 1s; }
+    .enTheEnd canvas { display: block; width: min(80vw, 60vmin, 480px); height: auto; image-rendering: pixelated; image-rendering: crisp-edges; }
+    #ende.theEnd .enTheEnd { opacity: 1; }
+    #ende.theEnd .enTheEnd canvas { animation: tdZitter 0.25s steps(3) infinite; }
+    #ende.dank .enTheEnd { top: 27%; }
+    #ende.dank .enTheEnd canvas { animation: none; }
+    .enDank { position: absolute; left: 0; right: 0; top: 50%; padding: 0 20px; opacity: 0; transition: opacity 1.2s; }
+    #ende.dank .enDank { opacity: 1; }
+    .enDank .gross { font: 700 clamp(14px, 1.4vmin + 9px, 20px)/1.4 var(--ui-mono); letter-spacing: 0.3em; color: var(--ui-beige); }
+    .enDank .name { margin: 6px 0 14px; font: 700 clamp(24px, 4vmin + 10px, 44px)/1.2 var(--ui-mono); letter-spacing: 0.2em; color: var(--ui-hell); text-shadow: var(--ui-glut); }
+    .enDank .zahl { font: 12px/1.6 var(--ui-mono); letter-spacing: 0.18em; color: var(--ui-blass); }
+    .enDank .klein { margin-top: 4vmin; font: 700 12px var(--ui-mono); letter-spacing: 0.2em; color: var(--ui-beige); animation: uiBlink 1.2s steps(2) infinite; }
+
+    /* --- PAUSE (menue.js) --- */
+    #menue { z-index: 70; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.6); }
+    .ui-fenster {
+        position: relative; box-sizing: border-box; min-width: min(86vw, 340px); max-width: 92vw; max-height: 92vh; overflow: hidden;
+        padding: 18px 22px 16px; text-align: center; background: rgba(14, 11, 5, 0.9); border: 2px solid rgba(201, 184, 132, 0.45);
+        box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.6), 0 18px 60px rgba(0, 0, 0, 0.8);
+    }
+    .meKopf { margin-bottom: 10px; font: 700 13px var(--ui-mono); letter-spacing: 0.4em; color: var(--ui-blass); }
+    .meListe .ui-knopf { padding: 6px 12px; }
+    .meSteuer { display: none; }
+    #menue.steuerung .meListe { display: none; }
+    #menue.steuerung .meSteuer { display: block; }
+    .meSteuerText div { display: flex; justify-content: space-between; gap: 18px; text-align: left; font: 700 13px/1.9 var(--ui-mono); letter-spacing: 0.1em; }
+    .meSteuerText span { color: var(--ui-hell); }
+    .meSteuerText b { color: var(--ui-beige); }
+    .meSteuerText p { margin: 12px 0 8px; font: 12px/1.6 var(--ui-mono); letter-spacing: 0.1em; color: var(--ui-blass); }
+
+    /* --- LEISTE (leiste.js): Ton, Musik, Pause oben links; hochkant eine Spalte --- */
+    #leiste {
+        position: fixed; z-index: 55; top: calc(8px + env(safe-area-inset-top, 0px)); left: calc(8px + env(safe-area-inset-left, 0px));
+        display: flex; gap: 6px;
+    }
+    body[data-zustand="laden"] #leiste { display: none; }
+    #leiste button {
+        flex: none; box-sizing: border-box; width: 38px; height: 38px; padding: 8px; margin: 0; cursor: pointer;
+        border: 2px solid rgba(201, 184, 132, 0.32); border-radius: 0; background: rgba(12, 10, 4, 0.42); color: rgba(240, 228, 180, 0.8);
+        -webkit-tap-highlight-color: transparent; transition: background-color 0.1s linear, opacity 0.15s linear;
+    }
+    #leiste button svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+    #leiste button .strich { display: none; fill: #f0e0a8; }
+    #leiste button.aus .strich { display: inline; }
+    #leiste button.aus .welle { display: none; }
+    #leiste button.aus { opacity: 0.5; }
+    #lePause { display: none; }
+    body[data-zustand="spiel"] #lePause, body[data-zustand="pause"] #lePause { display: block; }
+    #leiste #lePause.an { background: rgba(201, 184, 132, 0.35); }
+    #leiste button:active { background: rgba(201, 184, 132, 0.3); }
+    @media (hover: hover) { #leiste button:hover { background: rgba(201, 184, 132, 0.2); } }
+
+    /* --- TOUCH (touch.js, aus TerraPixel 2): erst nach der ersten Beruehrung (body.touch) und nur im Spiel. Nichts nimmt
+       Zeiger an - touch.js horcht am Fenster und trifft ueber die Geometrie. Unsichtbar = visibility (Rechteck bleibt). */
+    #touchSteuer {
+        position: fixed; inset: 0; z-index: 30; pointer-events: none; opacity: 0; visibility: hidden;
+        transition: opacity 0.2s linear, visibility 0.2s linear;
+    }
+    body.touch[data-zustand="spiel"] #touchSteuer { opacity: 1; visibility: visible; }
+    #touchStick {
+        /* BEWUSST OHNE transition (getBoundingClientRect laese sonst den Zwischenstand) */
+        --vx: 0px; --vy: 0px; transform: translate(var(--vx), var(--vy));
+        position: absolute; box-sizing: border-box; width: var(--stick); height: var(--stick); border-radius: 50%;
+        left: calc(var(--rand) + env(safe-area-inset-left, 0px)); bottom: calc(var(--rand) + env(safe-area-inset-bottom, 0px));
+        background: rgba(12, 10, 4, 0.32); border: 2px dashed rgba(201, 184, 132, 0.3);
+    }
+    #touchKnauf {
+        --kx: 0px; --ky: 0px; position: absolute; left: 50%; top: 50%; box-sizing: border-box; width: 42%; height: 42%; border-radius: 50%;
+        background: rgba(201, 184, 132, 0.22); border: 2px solid rgba(234, 219, 149, 0.45);
+        transform: translate(calc(-50% + var(--kx)), calc(-50% + var(--ky)));
+        transition: background-color 0.1s linear;
+    }
+    #touchStick.zieht #touchKnauf { background: rgba(234, 219, 149, 0.4); border-color: rgba(255, 244, 196, 0.75); }
+    #touchStick.leise #touchKnauf { background: rgba(201, 184, 132, 0.16); border-style: dashed; }
+    .tk {
+        position: absolute; box-sizing: border-box; border-radius: 50%;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+        background: rgba(12, 10, 4, 0.45); border: 2px solid rgba(201, 184, 132, 0.5); color: rgba(240, 228, 180, 0.85);
+        font: 700 11px/1 var(--ui-mono); letter-spacing: 0.08em; transition: transform 0.06s linear, background-color 0.06s linear;
+    }
+    .tk .sym { display: block; width: 40%; height: 40%; }
+    .tk .sym svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+    .tk b { max-width: 92%; overflow: hidden; white-space: nowrap; font-size: clamp(9px, 1.3vmin + 3px, 12px); }
+    .tk.an, .tk.tipp { background: rgba(234, 219, 149, 0.38); transform: scale(0.93); }
+    /* B2.2: LIGHT (buendeln) gross unten rechts, ACTION klein darueber, kein LAMP-Knopf mehr */
+    #tkAktion {
+        width: var(--klein); height: var(--klein);
+        right: calc(var(--rand) + env(safe-area-inset-right, 0px) + (var(--knopf) - var(--klein)) / 2);
+        bottom: calc(var(--rand) + env(safe-area-inset-bottom, 0px) + (var(--stick) - var(--knopf)) / 2 + var(--knopf) + 14px);
+    }
+    /* B5.0: ACTION nur sichtbar, wenn es etwas zu tun gibt - erscheint mit kurzem Aufploppen (inherit: nie sichtbarer als #touchSteuer) */
+    #tkAktion { visibility: hidden; opacity: 0; }
+    #tkAktion.ding { visibility: inherit; opacity: 1; border-color: rgba(255, 244, 196, 0.95); color: var(--ui-hell);
+        background: rgba(60, 50, 16, 0.6); box-shadow: 0 0 18px rgba(240, 220, 140, 0.5); animation: tkAuf 0.22s ease-out; }
+    #tkAktion.ding.an, #tkAktion.ding.tipp { background: rgba(234, 219, 149, 0.45); }
+    @keyframes tkAuf { 0% { opacity: 0; transform: scale(0.6); } 70% { opacity: 1; transform: scale(1.08); } 100% { transform: scale(1); } }
+    #tkRennen {
+        width: calc(var(--knopf) * 0.86); height: calc(var(--knopf) * 0.86);
+        right: calc(var(--rand) + env(safe-area-inset-right, 0px) + var(--knopf) + 14px);
+        bottom: calc(var(--rand) + env(safe-area-inset-bottom, 0px) + (var(--stick) - var(--knopf) * 0.86) / 2);
+    }
+    #tkRad {        /* B2.6 Waffenrad, klein ueber RUN (waffenrad.js zeigt ihn) */
+        display: none;
+        width: var(--klein); height: var(--klein);
+        right: calc(var(--rand) + env(safe-area-inset-right, 0px) + var(--knopf) + 14px + (var(--knopf) * 0.86 - var(--klein)) / 2);
+        bottom: calc(var(--rand) + env(safe-area-inset-bottom, 0px) + (var(--stick) - var(--knopf) * 0.86) / 2 + var(--knopf) * 0.86 + 14px);
+    }
+    #tkLicht {
+        width: var(--knopf); height: var(--knopf);
+        right: calc(var(--rand) + env(safe-area-inset-right, 0px));
+        bottom: calc(var(--rand) + env(safe-area-inset-bottom, 0px) + (var(--stick) - var(--knopf)) / 2);
+        border-color: rgba(255, 240, 190, 0.75);
+    }
+    #tkLicht.an { background: rgba(255, 246, 210, 0.55); box-shadow: 0 0 18px rgba(255, 240, 190, 0.6); }
+
+    /* --- Hochkant, Handy, kleine Fenster --- */
+    @media (orientation: portrait) {
+        #leiste { flex-direction: column; }
+        #tipp { max-width: calc(100vw - 130px); }
+        /* B7.6 ueber WEAPONS/ACTION rechts (die reichen bis ~stick + 50) */
+        body.touch #hudAusdauer { bottom: calc(var(--rand) + var(--stick) + 52px + env(safe-area-inset-bottom, 0px)); }
+        body.touch #hinweis { bottom: calc(var(--rand) + var(--stick) + 64px + env(safe-area-inset-bottom, 0px)); }
+    }
+    /* B7.6 quer mit Touch: ueber die Randpfeile + Namen unten (MS_PF.rand 26 + Name) */
+    @media (orientation: landscape) {
+        body.touch #hudAusdauer { bottom: calc(54px + env(safe-area-inset-bottom, 0px)); }
+        body.touch #hinweis { bottom: calc(62px + env(safe-area-inset-bottom, 0px)); }
+    }
+    @media (max-width: 560px) {
+        #hud { font-size: 11px; }
+        #hudRec .datum { display: none; }     /* B7.6 hochkant eine Zeile weniger rechts oben */
+        #tipp { font-size: 13px; top: calc(60px + env(safe-area-inset-top, 0px)); }
+        #tipp.letzt { font-size: 14px; }
+        #hinweis { font-size: 12px; white-space: normal; width: max-content; text-align: center; }     /* B7.6 hochkant umbrechen statt ... */
+        .meSteuerText div { font-size: 11px; gap: 10px; }
+    }
+    @media (max-height: 420px) {
+        #hud { font-size: 11px; }
+        #hudRec { top: calc(8px + env(safe-area-inset-top, 0px)); }
+        #hudRec .datum { display: none; }
+        #tipp { top: calc(50px + env(safe-area-inset-top, 0px)); font-size: 13px; }
+        #meldung { top: calc(14vh + env(safe-area-inset-top, 0px)); }
+        #levelKarte { top: 40%; }
+        .tiInnen { gap: 5px; padding: 8px; }
+        .tiLogo canvas { width: min(60vw, 36vh, 420px); }
+        .tiUnter { display: none; }
+        .tiDruecke { margin-top: 4px; }
+        .tiSteuer { line-height: 1.7; }
+        #titel.wahl .tiLogo canvas { width: min(40vw, 22vh, 300px); }      /* B2.7 Level-Menue quer am Handy */
+        #titel.wahl .tiSteuer { line-height: 1.5; font-size: 10px; }
+        .tiLevel { gap: 4px; }
+        .tiPlay { padding: 7px 30px; }
+        .tdZeit { margin-top: 6px; }
+        .ui-knopf { padding: 3px 10px; font-size: 16px; }
+        .meListe .ui-knopf { padding: 2px 10px; }
+        .ui-fenster { padding: 10px 18px 8px; }
+        .meKopf { margin-bottom: 4px; }
+        .meSteuerText div { line-height: 1.5; }
+        .meSteuerText p { margin: 6px 0 4px; }
+        #zettel .papier { max-height: 88vh; padding: 16px 20px 12px; }
+    }
+    @media (max-height: 340px) { #titel.wahl .tiSteuer, #titel.wahl .tiLvUnter { display: none; } }   /* B2.7 sehr flach */
+    /* /UI-CSS */
+</style>
+</head>
+<body>
+    <div id="laden" aria-hidden="true">
+        <canvas id="ladenTitel" width="41" height="21"></canvas>
+        <div id="ladenBalken"><i></i><b></b></div>
+        <div id="ladenText">LOADING</div>
+    </div>
+    <script>
+    // Ladebild (TerraPixel 2): Schriftzug YELLOW / ROOMS in Pixelschrift 5x7, vergilbtes Gelb mit dunklem Rand.
+    // Balken: Skripte 4-66 % (je Datei ein Schritt), Welt bauen bis 94 %, fertig mit dem ersten Bild.
+    (function () {
+        var G = { Y: '#...##...#.#.#...#....#....#....#..', E: '######....#....####.#....#....#####', L: '#....#....#....#....#....#....#####',
+                  O: '.###.#...##...##...##...##...#.###.', W: '#...##...##...##.#.##.#.##.#.#.#.#.', R: '####.#...##...#####.#.#..#..#.#...#',
+                  M: '#...###.###.#.##.#.##...##...##...#', S: '.#####....#.....###.....#....#####.' };
+        var GELB = ['#fff7c0', '#f4e48a', '#e6d06a', '#d8bd52', '#c4a640', '#a88c32', '#86702a'];
+        var c = document.getElementById('ladenTitel'), g = c.getContext && c.getContext('2d');
+        if (!g) return;
+        var zellen = [];
+        [['YELLOW', 2], ['ROOMS', 12]].forEach(function (z) {
+            var x = 2 + Math.floor((37 - (z[0].length * 6 - 1)) / 2);
+            for (var k = 0; k < z[0].length; k++, x += 6) {
+                var gl = G[z[0][k]];
+                for (var y = 0; y < 7; y++) for (var i = 0; i < 5; i++) if (gl[y * 5 + i] === '#') zellen.push([x + i, z[1] + y, GELB[y]]);
+            }
+        });
+        g.fillStyle = '#000';
+        zellen.forEach(function (p) { g.fillRect(p[0] - 1, p[1] - 1, 3, 3); });
+        g.fillStyle = 'rgba(60,40,0,0.8)';
+        zellen.forEach(function (p) { g.fillRect(p[0] + 1, p[1] + 1, 1, 1); });
+        zellen.forEach(function (p) { g.fillStyle = p[2]; g.fillRect(p[0], p[1], 1, 1); });
+    })();
+    window.TC_lade = (function () {
+        var t0 = performance.now(), fertig = false;
+        function balken(a, s, kurve) {
+            var el = document.querySelector('#ladenBalken i');
+            if (!el) return;
+            el.style.transition = 'transform ' + s + 's ' + (kurve || 'ease-out');
+            el.style.transform = 'scaleX(' + a + ')';
+        }
+        function text(t) { var el = document.getElementById('ladenText'); if (el) el.textContent = t; }
+        return function (was, anteil) {
+            if (fertig) return;
+            if (was === 'datei') balken(0.04 + 0.62 * anteil, 0.4);
+            else if (was === 'welt') {
+                text('ENTERING');
+                balken(0.94, Math.max(1, Math.min(10, (performance.now() - t0) / 1000)), 'cubic-bezier(0.15, 0.6, 0.3, 1)');
+            } else if (was === 'fertig') {
+                fertig = true;
+                balken(1, 0.15);
+                var l = document.getElementById('laden');
+                if (!l) return;
+                setTimeout(function () { l.classList.add('weg'); }, 150);
+                setTimeout(function () { if (l.parentNode) l.parentNode.removeChild(l); }, 900);
+            }
+        };
+    })();
+    </script>
+    <div id="buehne"><canvas id="spielCanvas"></canvas></div>
+    <!-- ===== OBERFLAECHE: Container fuer HUD/Titel/Tod/Menue/Touch (UI-DOM) ===== -->
+    <div id="ui"></div>
+    <!-- UI-DOM -->
+    <!-- Leiste oben links (leiste.js baut die Knoepfe Ton, Musik, Pause) -->
+    <div id="leiste"></div>
+    <!-- Touch (touch.js): erst sichtbar, wenn ein Finger den Schirm beruehrt, und nur im Spiel. Stick links (schwebt),
+         rechts RUN (halten), LIGHT gross (halten = buendeln), ACTION klein darueber (zeigt das naechste Ding). Nichts davon nimmt Zeiger an. -->
+    <div id="touchSteuer" aria-hidden="true">
+        <div id="touchStick"><div id="touchKnauf"></div></div>
+        <div id="tkRennen" class="tk"></div>
+        <div id="tkAktion" class="tk"></div>
+        <div id="tkLicht" class="tk"></div>
+        <div id="tkRad" class="tk"></div>
+    </div>
+    <!-- /UI-DOM -->
+    <!-- ===== POKI (platform.js; Ladeweiche und Stub wie TerraPixel 2) ===== -->
+    <script>
+        window.PLATFORM_POKI_ENABLED = false;
+        // Offline Poki SDK stub: ads/analytics stripped; interstitial resumes, rewarded grants.
+        window.PokiSDK = {
+            init: function () { return Promise.resolve(true); },
+            gameLoadingFinished: function () {},
+            gameplayStart: function () {},
+            gameplayStop: function () {},
+            commercialBreak: function (cb) { if (typeof cb === "function") cb(); return Promise.resolve(true); },
+            rewardedBreak: function () { return Promise.resolve(true); },
+            measure: function () {}
+        };
+    </script>
+    <script>
+        function TC_pokiSdkLaden(h) {
+            h = String(h || '').toLowerCase();
+            if (/(^|\.)github\.io$/.test(h)) return false;
+            if (h === '' || h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1' || /\.localhost$/.test(h)) return false;
+            if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h) || /\.local$/.test(h)) return false;
+            return true;
+        }
+        if (window.PLATFORM_POKI_ENABLED && TC_pokiSdkLaden(location.hostname)) {
+            document.write('<script src="https://game-cdn.poki.com/scripts/v2/poki-sdk.js" onerror="window.__POKI_SDK_FAILED=1"><\/script>');
+        }
+    </script>
+    <script>
+        (function () {
+            if (!window.PLATFORM_POKI_ENABLED) return;
+            var q;
+            try { q = new URLSearchParams(location.search); if (q.get('pokistub') !== '1') return; } catch (e) { return; }
+            var log = function (m) { console.log('[Poki-Stub]', m); };
+            window.PokiSDK = {
+                init: function () { log('init()'); return Promise.resolve(); },
+                gameLoadingStart: function () { log('gameLoadingStart()'); },
+                gameLoadingFinished: function () { log('gameLoadingFinished()'); },
+                gameplayStart: function () { log('gameplayStart()'); },
+                gameplayStop: function () { log('gameplayStop()'); },
+                measure: function (c, w, a) { log('measure(' + c + ', ' + w + (a ? ', ' + a : '') + ')'); },
+                commercialBreak: function (vorher) { log('commercialBreak()'); try { if (vorher) vorher(); } catch (e) {} return new Promise(function (r) { setTimeout(r, 1500); }); },
+                rewardedBreak: function (vorher) { log('rewardedBreak()'); try { if (vorher) vorher(); } catch (e) {} return new Promise(function (r) { setTimeout(function () { r(true); }, 1500); }); }
+            };
+            log('aktiv');
+        })();
+    </script>
+    <script>
+    (function () {
+        var sdk = window.PLATFORM_POKI_ENABLED && window.PokiSDK;
+        if (!sdk || typeof sdk.init !== 'function') return;
+        try { window.YR_POKI_INIT = Promise.resolve(sdk.init()).then(function () { return true; }, function () { return false; }); }
+        catch (e) { window.YR_POKI_INIT = Promise.resolve(false); }
+        window.YR_POKI_INIT.then(function () { try { if (sdk.gameLoadingStart) sdk.gameLoadingStart(); } catch (e) { } });
+    })();
+    </script>
+    <!-- Ladeliste: kern zuerst, main zuletzt. Version aus dem <title> als ?v= (frisch laden). Aufrufe zwischen Dateien
+         sind typeof-geschuetzt oder laufen ueber Haken (kern.js Spiel_haken). -->
+    <script>
+    (function () {
+        var v = (document.title.match(/B\d+\.\d+/) || ['0'])[0];
+        if (/[?&]frisch=1/.test(location.search)) v += '.' + Date.now();
+        var dateien = ['kern', 'platform', 'schwierig', 'welt',     // B3.0 schwierig.js: EASY/NORMAL/HARD
+                        'kacheln', 'fenster', 'render',
+                       'licht', 'sicht', 'effekte', 'render_gl',
+                       'deko', 'dach', 'lv_kern', 'lv_0', 'lv_1', 'lv_2', 'lv_3', 'lv_4', 'lv_stadt',     // B3.2 lv_stadt.js: EMPTY TOWN (Level 0); B3.5 dach.js: Daecher + Mondlicht
+                       'dinge', 'moebel', 'mb_0', 'mb_1', 'mb_2', 'mb_3', 'mb_5', 'sicherung',     // B3.0 sicherung.js: Sicherungen -> Licht     // B2.7 Moebel zum Schieben (mb_N = Moebel je Level)
+                       'wesen', 'wesen_gaenger', 'wesen_meute', 'wesen_kriecher', 'wesen_grinsen', 'wesen_welle', 'wesen_flimmer', 'wesen_schlurfer', 'wesen_springer', 'wesen_zoegerer', 'wesen_greifer', 'wesen_nachbar',     // B3.7 wesen_nachbar.js: DIE NACHBARN (Stadt); B4.4 wesen_schlurfer.js: langsame Gruppen; B4.7 wesen_springer.js: springen aufs Auto
+                       'held', 'kampf', 'waffen',     // B2.6 waffen.js: alle Feuerwaffen
+                       'ton', 'ton_klang', 'ton_bank', 'ton_spiel', 'ton_atmo',
+                       'tasten', 'touch', 'leiste', 'anzeige', 'titel', 'tod', 'uebergang', 'menue', 'ueberleben', 'wellen', 'ausweg', 'punkte', 'tutorial', 'handbuch', 'verbund', 'sog', 'stadt_ereignis', 'auto', 'wandbruch',     // B6.9 wandbruch.js: Hauswaende brechen; B3.0 Wellen, Punkte, Tutorial, Handbuch; B3.4 verbund.js: ein Lauf, Stadt als Mittelpunkt; B3.6 stadt_ereignis.js: Ereignisse, Telefonzellen, Jukebox; B4.3 auto.js: Autos fahren
+                          // B2.7 ueberleben.js: Ueberlebens-Modus
+                       'pistole', 'waffen_schwer', 'hammer', 'waffenrad', 'knoepfe', 'pfad',     // B7.4 hammer.js: Vorschlaghammer; B7.5 knoepfe.js: Knoepfe unten Mitte am Rechner
+                       'menschen_bild', 'menschen',     // B6 MENSCHEN: A* (pfad.js), Ueberlebende aus dem Bus      // B2.4/B2.6 Schiessen (Rueckbau: siehe js/pistole.js)
+                       'main'];
+        for (var i = 0; i < dateien.length; i++)
+            document.write('<script src="js/' + dateien[i] + '.js?v=' + v + '"><\/script><script>TC_lade("datei", ' + ((i + 1) / dateien.length).toFixed(3) + ')<\/script>');
+    })();
+    </script>
+</body>
+</html>
