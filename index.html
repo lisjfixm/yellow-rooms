@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>YELLOW ROOMS B8.1</title>
+<title>YELLOW ROOMS B8.2</title>
 <link rel="icon" href="data:,">
 <style>
     html, body {
@@ -601,7 +601,7 @@
     (function () {
         var v = (document.title.match(/B\d+\.\d+/) || ['0'])[0];
         if (/[?&]frisch=1/.test(location.search)) v += '.' + Date.now();
-        var dateien = ['kern', 'schwierig', 'welt',     // B3.0 schwierig.js: EASY/NORMAL/HARD
+        var dateien = ['kern', 'i18n', 'schwierig', 'welt',     // B3.0 schwierig.js: EASY/NORMAL/HARD
                         'kacheln', 'fenster', 'render',
                        'licht', 'sicht', 'effekte', 'render_gl',
                        'deko', 'dach', 'lv_kern', 'lv_0', 'lv_1', 'lv_2', 'lv_3', 'lv_4', 'lv_stadt',     // B3.2 lv_stadt.js: EMPTY TOWN (Level 0); B3.5 dach.js: Daecher + Mondlicht
@@ -611,7 +611,7 @@
                        'ton', 'ton_klang', 'ton_bank', 'ton_spiel', 'ton_atmo',
                        'tasten', 'touch', 'leiste', 'anzeige', 'titel', 'tod', 'uebergang', 'menue', 'ueberleben', 'wellen', 'ausweg', 'punkte', 'tutorial', 'handbuch', 'verbund', 'sog', 'stadt_ereignis', 'auto', 'wandbruch',     // B6.9 wandbruch.js: Hauswaende brechen; B3.0 Wellen, Punkte, Tutorial, Handbuch; B3.4 verbund.js: ein Lauf, Stadt als Mittelpunkt; B3.6 stadt_ereignis.js: Ereignisse, Telefonzellen, Jukebox; B4.3 auto.js: Autos fahren
                           // B2.7 ueberleben.js: Ueberlebens-Modus
-                       'pistole', 'waffen_schwer', 'hammer', 'waffenrad', 'knoepfe', 'pfad',     // B7.4 hammer.js: Vorschlaghammer; B7.5 knoepfe.js: Knoepfe unten Mitte am Rechner
+                       'pistole', 'waffen_schwer', 'hammer', 'waffenrad', 'knoepfe', 'pfad', 'ki',     // B7.4 hammer.js: Vorschlaghammer; B7.5 knoepfe.js: Knoepfe unten Mitte am Rechner; ki.js: 自動游玩 AI
                        'menschen_bild', 'menschen',     // B6 MENSCHEN: A* (pfad.js), Ueberlebende aus dem Bus      // B2.4/B2.6 Schiessen (Rueckbau: siehe js/pistole.js)
                        'main'];
         for (var i = 0; i < dateien.length; i++)
